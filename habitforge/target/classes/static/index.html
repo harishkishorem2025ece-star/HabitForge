@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HabitForge</title>
+    <style>
+        :root{--bg:#eef2f1;--panel:#fff;--ink:#10231f;--mute:#5d6f6a;--line:#d5dedb;--acc:#0f766e;--accbg:#d7efe9;--bad:#b4232c;--gold:#b7791f}
+        *{box-sizing:border-box}
+        body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+        header{padding:18px 24px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:baseline;gap:14px}
+        h1{margin:0;font:700 24px Georgia,serif}
+        header span{color:var(--mute)}
+        main{display:grid;grid-template-columns:320px 1fr;gap:20px;padding:20px 24px;max-width:1100px;margin:auto}
+        @media(max-width:800px){main{grid-template-columns:1fr}}
+        section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;margin-bottom:16px}
+        h2{margin:0 0 10px;font-size:16px}
+        label{display:block;margin:8px 0 3px;color:var(--mute);font-size:13px}
+        input,select,button{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);width:100%}
+        button{cursor:pointer;background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600;width:auto}
+        button.ghost{background:#fff;color:var(--acc)}
+        button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+        .days{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+        .days[hidden]{display:none}
+        .days label{margin:0;display:flex;align-items:center;gap:4px;color:var(--ink)}
+        .days input{width:auto}
+        .habit{display:flex;justify-content:space-between;padding:9px 10px;border:1px solid var(--line);border-radius:4px;margin-top:8px;cursor:pointer}
+        .habit.on{border-color:var(--acc);background:var(--accbg)}
+        .habit small{color:var(--mute)}
+        .big{display:flex;gap:40px;margin-bottom:12px}
+        .big div{font:700 56px/1 Georgia,serif;color:var(--acc)}
+        .big div.best{color:var(--gold)}
+        .big small{display:block;font:13px "Segoe UI",sans-serif;color:var(--mute);margin-top:4px}
+        .row{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+        .row>*{flex:0 1 auto}
+        .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px}
+        .cal b{text-align:center;font-size:12px;color:var(--mute);font-weight:600}
+        .cal i{font-style:normal;text-align:center;padding:8px 0;border-radius:4px;background:#f6f8f7;border:1px solid var(--line)}
+        .cal i.done{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+        .cal i.off{opacity:.35}
+        .cal i.blank{visibility:hidden}
+        #msg{padding:9px 12px;border-radius:4px;margin-bottom:14px;display:none}
+        #msg.ok{display:block;background:var(--accbg);color:#0a4d47}
+        #msg.err{display:block;background:#f8dcde;color:var(--bad)}
+        pre{margin:0;background:#10231f;color:#cfe8e2;padding:12px;border-radius:4px;overflow:auto;font-size:13px;max-height:220px}
+    </style>
+</head>
+<body>
+<header><h1>HabitForge</h1><span>Habit streak tracker</span></header>
+<main>
+    <div>
+        <section>
+            <h2>New habit</h2>
+            <label for="name">Habit name</label>
+            <input id="name" placeholder="Read 20 pages">
+            <label for="freq">Frequency</label>
+            <select id="freq"><option value="DAILY">Every day</option><option value="SPECIFIC_DAYS">Specific weekdays</option></select>
+            <div class="days" id="daysBox" hidden></div>
+            <label for="start">Start date (optional, for testing past dates)</label>
+            <input id="start" type="date">
+            <p><button id="create">Create habit</button></p>
+        </section>
+        <section>
+            <h2>Your habits</h2>
+            <div id="list"><small>No habits yet. Create your first one above.</small></div>
+        </section>
+    </div>
+
+    <div>
+        <div id="msg" role="status"></div>
+        <section id="detail" hidden>
+            <h2 id="hname"></h2>
+            <div class="big">
+                <div id="cur">0<small>Current streak</small></div>
+                <div id="best" class="best">0<small>Best streak</small></div>
+            </div>
+            <div class="row">
+                <div><label for="logDate">Date to log</label><input id="logDate" type="date"></div>
+                <button id="log">Mark as done</button>
+                <button class="ghost" id="today">Mark today</button>
+            </div>
+        </section>
+        <section id="calSec" hidden>
+            <div class="row">
+                <div><label for="month">Month</label><input id="month" type="month"></div>
+            </div>
+            <div class="cal" id="cal"></div>
+        </section>
+        <section>
+            <h2>Last API response</h2>
+            <pre id="raw">Nothing yet.</pre>
+        </section>
+    </div>
+</main>
+
+<script>
+    const API = "/api/habits";
+    const DAYS = ["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"];
+    let habits = [], selected = null;
+    const $ = id => document.getElementById(id);
+    const iso = d => d.toISOString().slice(0,10);
+    const localToday = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return iso(d); };
+
+    DAYS.forEach(d => {
+        const l = document.createElement("label");
+        l.innerHTML = '<input type="checkbox" value="' + d + '"> ' + d.slice(0,3);
+        $("daysBox").appendChild(l);
+    });
+    $("freq").onchange = () => $("daysBox").hidden = $("freq").value !== "SPECIFIC_DAYS";
+
+    async function api(path, opts) {
+        try {
+            const res = await fetch(API + path, opts);
+            const text = await res.text();
+            const data = text ? JSON.parse(text) : null;
+            $("raw").textContent = res.status + " " + res.statusText + "\n" + JSON.stringify(data, null, 2);
+            if (!res.ok) throw new Error((data && data.error) || "Request failed (" + res.status + ")");
+            return data;
+        } catch (e) {
+            flash(e.message === "Failed to fetch" ? "Cannot reach the server. Is the Spring Boot app running on this address?" : e.message, true);
+            throw e;
+        }
+    }
+    function flash(text, isErr) {
+        const m = $("msg"); m.textContent = text; m.className = isErr ? "err" : "ok";
+    }
+
+    async function loadHabits() {
+        habits = await api("");
+        const box = $("list"); box.innerHTML = "";
+        if (!habits.length) { box.innerHTML = "<small>No habits yet. Create your first one above.</small>"; return; }
+        habits.forEach(h => {
+            const d = document.createElement("div");
+            d.className = "habit" + (selected && selected.id === h.id ? " on" : "");
+            const t = document.createElement("span"); t.textContent = h.name;
+            const s = document.createElement("small");
+            s.textContent = h.frequency === "DAILY" ? "Every day" : h.targetDays.split(",").map(x => x.slice(0,3)).join(", ");
+            d.append(t, s);
+            d.onclick = () => select(h);
+            box.appendChild(d);
+        });
+    }
+
+    async function select(h) {
+        selected = h;
+        $("detail").hidden = false; $("calSec").hidden = false;
+        $("hname").textContent = h.name;
+        $("logDate").value = localToday();
+        if (!$("month").value) $("month").value = localToday().slice(0,7);
+        await loadHabits();
+        await refresh();
+    }
+
+    async function refresh() {
+        const s = await api("/" + selected.id + "/streak");
+        $("cur").firstChild.nodeValue = s.currentStreak;
+        $("best").firstChild.nodeValue = s.bestStreak;
+        await drawCalendar();
+    }
+
+    async function drawCalendar() {
+        const month = $("month").value;
+        const c = await api("/" + selected.id + "/calendar?month=" + month);
+        const done = new Set(c.completedDates);
+        const [y, m] = month.split("-").map(Number);
+        const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
+        const grid = $("cal"); grid.innerHTML = "";
+        ["Mo","Tu","We","Th","Fr","Sa","Su"].forEach(n => { const b = document.createElement("b"); b.textContent = n; grid.appendChild(b); });
+        for (let i = 0; i < (first.getDay() + 6) % 7; i++) { const e = document.createElement("i"); e.className = "blank"; e.textContent = "0"; grid.appendChild(e); }
+        for (let d = 1; d <= days; d++) {
+            const date = month + "-" + String(d).padStart(2, "0");
+            const name = DAYS[(new Date(y, m - 1, d).getDay() + 6) % 7];
+            const cell = document.createElement("i");
+            cell.textContent = d;
+            if (done.has(date)) cell.className = "done";
+            else if (selected.frequency === "SPECIFIC_DAYS" && !selected.targetDays.split(",").includes(name)) cell.className = "off";
+            cell.title = date;
+            grid.appendChild(cell);
+        }
+    }
+
+    $("create").onclick = async () => {
+        const body = { name: $("name").value, frequency: $("freq").value };
+        if (body.frequency === "SPECIFIC_DAYS")
+            body.targetDays = [...document.querySelectorAll("#daysBox input:checked")].map(x => x.value);
+        if ($("start").value) body.startDate = $("start").value;
+        try {
+            const h = await api("", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
+            flash("Habit created: " + h.name);
+            $("name").value = "";
+            await select(h);
+        } catch (e) {}
+    };
+
+    async function logDay(date) {
+        try {
+            await api("/" + selected.id + "/completions", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ date }) });
+            flash("Logged " + date);
+            await refresh();
+        } catch (e) {}
+    }
+    $("log").onclick = () => logDay($("logDate").value);
+    $("today").onclick = () => logDay(localToday());
+    $("month").onchange = () => selected && drawCalendar();
+
+    loadHabits().catch(() => {});
+</script>
+</body>
+</html>
